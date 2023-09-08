@@ -1,0 +1,352 @@
+openapi: 3.0.2
+info:
+  title: 'Простая реферальная система'
+  version: ''
+  description: |
+   # Алгоритм регистрации пользователей
+    1. Пользователь отправляет POST-запрос на добавление нового пользователя с номером телефона `phone_number` на эндпоинт `/auth/signup/`.
+    2. Приложение отправляет СМС с кодом подтверждения (`confirmation_code`) по телефону  `phone_number`.
+    3. Пользователь отправляет POST-запрос с параметрами `phone_number` и `confirmation_code` на эндпоинт `/auth/token//`, в ответе на запрос ему приходит `token` (JWT-токен).
+    4. При желании пользователь отправляет PATCH-запрос на эндпоинт `/profile/` и заполняет поле `inviter_code`.
+    # Пользовательские роли
+    - **Аноним** — может зарегистрироваться.
+    - **Аутентифицированный пользователь** — может, получить доступ к своему профилю и внести в профиль код пригласившего его пользователя. Эта роль присваивается по умолчанию каждому новому пользователю.
+    - **Администратор**  — как и супер пользователь имеет доступ к /users/ где видит все профили и может редактировать их. Так же как и через админ панель.
+
+servers:
+  - url: /api/
+
+tags:
+  - name: AUTH
+    description: Регистрация пользователей и выдача токенов
+  - name: PROFILE
+    description: Профиль пользователя
+  - name: USERS
+    description: Пользователи
+
+paths:
+  /auth/signup/:
+    post:
+      tags:
+        - AUTH
+      operationId: Регистрация нового пользователя
+      description: |
+        Получить код подтверждения переданный на номер `phone_number`.
+        Права доступа: **Доступно без токена.**
+        Любые номера по всему миру. RU номера указывать через **+7\*\*\*.**.
+        Поле `phone_number` должно быть уникальным.
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+                - phone_number
+              properties:
+                phone_number:
+                  type: string
+                  format: phonenumber_field
+                  maxLength: 12
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                properties:
+                  phone_number:
+                    type: string
+          description: 'Удачное выполнение запроса'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+          description: 'Введен некорректный номер телефона., Убедитесь, что это значение содержит не более 12 символов. Обязательное поле.'
+  /auth/token/:
+    post:
+      tags:
+        - AUTH
+      operationId: Получение JWT-токена
+      description: |
+        Получение JWT-токена в обмен на phone_number и confirmation code.
+        Права доступа: **Доступно без токена.**
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+                - phone_number
+                - confirmation_code
+              properties:
+                phone_number:
+                  type: string
+                  format: phonenumber_field
+                  maxLength: 12
+                confirmation_code:
+                  type: string
+                  writeOnly: true
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+          description: 'Удачное выполнение запроса'
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+          description: 'Отсутствует обязательное поле или оно некорректно'
+        404:
+          description: Страница не найдена
+
+  /profile/:
+    get:
+      tags:
+        - PROFILE
+      operationId: Получение данных своей учетной записи
+      description: |
+        Получить данные своей учетной записи
+        Права доступа: **Любой авторизованный пользовательь к своему профилю**
+      responses:
+        200:
+          description: Удачное выполнение запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        401:
+          description: Учетные данные не были предоставлены.
+
+      security:
+      - jwt-token:
+        - read:user
+
+    patch:
+      tags:
+        - PROFILE
+      operationId: Изменение данных своей учетной записи
+      description: |
+        Пользователь может один раз внести inviter_code
+        Права доступа: **Любой авторизованный пользователь к своему профилю**
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+                - inviter_code
+              properties:
+                inviter_code:
+                  type: string
+                  format: phonenumber_field
+                  maxLength: 6
+      responses:
+        200:
+          description: Удачное выполнение запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        403:
+          description: 'Вы уже ввели инвайт-код пригласившего вас пользователя.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        400:
+          description: 'Пользователь с таким инвайт-кодом не найден.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+      security:
+      - jwt-token:
+        - write:user
+
+  /users/:
+    get:
+      tags:
+        - USERS
+      operationId: listUsers
+      description: |
+        Получить список всех пользователей.
+        Права доступа: **Администратор**
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserProfile'
+          description: ''
+      security:
+      - jwt-token:
+        - read:admin
+        
+    post:
+      tags:
+        - USERS
+      operationId: createUser
+      description: ''
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+      security:
+      - jwt-token:
+        - write:admin
+        
+  /users/{id}/:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Id пользователя
+        schema:
+          type: string
+    get:
+      tags:
+        - USERS
+      operationId: Получение пользователя по id
+      description: |
+        Получить пользователя по id.
+        Права доступа: **Администратор**
+      responses:
+        200:
+          description: Удачное выполнение запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        401:
+          description: Необходим JWT-токен
+        403:
+          description: Нет прав доступа
+        404:
+          description: Пользователь не найден
+      security:
+      - jwt-token:
+        - read:admin
+    patch:
+      tags:
+        - USERS
+      operationId: Изменение данных пользователя по id
+      description: |
+        Изменить данные пользователя по id.
+        Права доступа: **Администратор.**
+        Поле `phone_number` должно быть уникальным.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+      responses:
+        200:
+          description: Удачное выполнение запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        400:
+          description: 'Отсутствует обязательное поле или оно некорректно'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: Необходим JWT-токен
+        403:
+          description: Нет прав доступа
+        404:
+          description: Пользователь не найден
+      security:
+      - jwt-token:
+        - write:admin
+        
+    delete:
+      tags:
+        - USERS
+      operationId: Удаление пользователя по id
+      description: |
+        Удалить пользователя по id.
+        Права доступа: **Администратор.**
+      responses:
+        204:
+          description: Удачное выполнение запроса
+        401:
+          description: Необходим JWT-токен
+        403:
+          description: Нет прав доступа
+        404:
+          description: Пользователь не найден
+      security:
+      - jwt-token:
+        - write:admin
+
+
+components:
+  schemas:
+  
+    UserProfile:
+      title: Пользователь
+      type: object
+      description: Детальная информация о пользователе
+      properties:
+        my_invite_code:
+          type: string
+        numbers_of_invitees:
+          type: array
+          items:
+            $ref: '#/components/schemas/numbers_of_invitees'
+          description: Required. 12 characters or fewer. Digits and + only.
+        inviter_code:
+          type: string
+
+    numbers_of_invitees:
+      type: object
+      properties:
+        phone_number:
+          type: string
+          maxLength: 12
+
+    ValidationError:
+      title: Ошибка валидации
+      type: object
+      properties:
+        field_name:
+          type: array
+          items:
+            type: string
+
+    Token:
+      title: Токен
+      type: object
+      properties:
+        token:
+          type: string
+          title: access токен
+
+  securitySchemes:
+    jwt-token:
+      type: apiKey
+      description: Используется аутентификация с использованием JWT-токенов
+      name: Bearer
+      in: header
