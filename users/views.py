@@ -122,8 +122,6 @@ class UserProfileGetPath(APIView):
         return self.get(request)
 
 
-# Для наглядности список всех пользователей
-# c доступом только для админов.
 class UserView(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserProfileSerializer
