@@ -26,9 +26,9 @@ def send_confirmation_code(phone_number, confirmation_code):
     message = f'Код авторизации: {confirmation_code}'
     sms_api = SmsRuApi()
     sms = sms_api.send_one_sms(phone=str(phone_number), msg=message)
+    # Заглушка отправки смс
     print('------------------', sms)
     print('------------------', message)
-    print(type(phone_number))
     time.sleep(1)
 
 
